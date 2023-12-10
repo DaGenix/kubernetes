@@ -143,7 +143,7 @@ type processedPods struct {
 
 type processedPodState struct {
 	processed       bool
-	lastMarkRemount time.Time
+	lastProcessedAt time.Time
 }
 
 func (dswp *desiredStateOfWorldPopulator) Run(ctx context.Context, sourcesReady config.SourcesReady) {
@@ -195,21 +195,6 @@ func (dswp *desiredStateOfWorldPopulator) findAndAddNewPods(ctx context.Context)
 	}
 
 	for _, pod := range dswp.podManager.GetPods() {
-		// Keep consistency of adding pod during reconstruction
-		if dswp.hasAddedPods && dswp.podStateProvider.ShouldPodContainersBeTerminating(pod.UID) {
-			// Do not (re)add volumes for pods that can't also be starting containers
-			// However, we do need to potentially remount volumes while terminating -
-			// for example projected volumes
-			uniquePodName := util.GetUniquePodName(pod)
-			var entry = dswp.pods.processedPods[uniquePodName]
-			if time.Since(entry.lastMarkRemount) > time.Duration(10*time.Second) {
-				dswp.actualStateOfWorld.MarkRemountRequired(uniquePodName)
-				entry.lastMarkRemount = time.Now()
-				dswp.pods.processedPods[uniquePodName] = entry
-			}
-			continue
-		}
-
 		if !dswp.hasAddedPods && dswp.podStateProvider.ShouldPodRuntimeBeRemoved(pod.UID) {
 			// When kubelet restarts, we need to add pods to dsw if there is a possibility
 			// that the container may still be running
@@ -429,7 +414,8 @@ func (dswp *desiredStateOfWorldPopulator) podPreviouslyProcessed(
 	dswp.pods.RLock()
 	defer dswp.pods.RUnlock()
 
-	return dswp.pods.processedPods[podName].processed
+	var entry = dswp.pods.processedPods[podName]
+	return entry.processed && time.Since(entry.lastProcessedAt) < time.Minute
 }
 
 // markPodProcessingFailed marks the specified pod from processedPods as false to indicate that it failed processing
@@ -461,6 +447,7 @@ func (dswp *desiredStateOfWorldPopulator) markPodProcessed(
 
 	var entry = dswp.pods.processedPods[podName]
 	entry.processed = true
+	entry.lastProcessedAt = time.Now()
 	dswp.pods.processedPods[podName] = entry
 }
 
