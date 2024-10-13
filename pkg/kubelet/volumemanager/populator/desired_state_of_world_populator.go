@@ -297,10 +297,10 @@ func (dswp *desiredStateOfWorldPopulator) processPodVolumes(
 		return
 	}
 
-	if dswp.podStateProvider.ShouldPodContainersBeTerminating(pod.UID) {
+	if dswp.hasAddedPods && dswp.podStateProvider.ShouldPodContainersBeTerminating(pod.UID) {
 		// If a Pod is terminating, we need to continue to refresh volumes.
-		// However, we don't need (or want) to set up new volumes for the pod.
-		// So we just call MarkRemountRequired and then bail out of this method.
+		// However, we also do not want to (re)add volumes for pods that can't also
+		// be starting containers
 		dswp.actualStateOfWorld.MarkRemountRequired(uniquePodName)
 		dswp.markPodProcessed(uniquePodName)
 		return
